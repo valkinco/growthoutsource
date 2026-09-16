@@ -14,23 +14,35 @@ interface Props {
   onOpenTech: () => void;
   onEndTurn: () => void;
   onChallengeGuardian: () => void;
+  isMyTurn: boolean;
 }
 
 const SPECS: Specialization[] = ['maker', 'market', 'watchtower', 'bastion'];
 
-export function ActionBar({ state, connectMode, onFound, onUpgrade, onSpecialize, onStartConnect, onCancelConnect, onOpenTech, onEndTurn, onChallengeGuardian }: Props) {
+export function ActionBar({ state, connectMode, onFound, onUpgrade, onSpecialize, onStartConnect, onCancelConnect, onOpenTech, onEndTurn, onChallengeGuardian, isMyTurn }: Props) {
   const [pickingSpec, setPickingSpec] = useState(false);
-  const tile = state.tiles[axialKey(state.founder)];
+  const side = state.activeSide;
+
+  if (!isMyTurn) {
+    return (
+      <div className="action-bar">
+        <div className="waiting-bar">Waiting for your rival's turn…</div>
+      </div>
+    );
+  }
+
+  const founder = state.founders[side];
+  const tile = state.tiles[axialKey(founder)];
   const settlement = tile?.settlementId ? state.settlements[tile.settlementId] : undefined;
-  const ownSettlement = settlement?.owner === 'player' ? settlement : undefined;
+  const ownSettlement = settlement?.owner === side ? settlement : undefined;
   const canChallengeGuardian = !!tile?.guardianId && !state.guardian.resolved && !state.pendingChallenge;
 
   const canFound = !tile?.settlementId && ['plains', 'forest', 'resource'].includes(tile?.terrain ?? '');
   const upgradeLabel = ownSettlement
     ? ownSettlement.level === 'outpost'
-      ? `Grow to Town (${upgradeCost(state, 'town')})`
+      ? `Grow to Town (${upgradeCost(state, side, 'town')})`
       : ownSettlement.level === 'town'
-      ? `Grow to City (${upgradeCost(state, 'city')})`
+      ? `Grow to City (${upgradeCost(state, side, 'city')})`
       : null
     : null;
 
@@ -75,7 +87,7 @@ export function ActionBar({ state, connectMode, onFound, onUpgrade, onSpecialize
             )}
             {ownSettlement && (
               <button className="btn-action" onClick={onStartConnect}>
-                Connect ({routeCost(state)})
+                Connect ({routeCost(state, side)})
               </button>
             )}
             <button className="btn-action" onClick={onOpenTech}>

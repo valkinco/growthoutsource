@@ -16,6 +16,8 @@ const BRANCH_LABEL: Record<TechBranch, string> = {
 };
 
 export function TechModal({ state, onUnlock, onClose }: Props) {
+  const side = state.activeSide;
+  const unlockedForSide = state.unlockedTech[side];
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-card tech-modal" onClick={(e) => e.stopPropagation()}>
@@ -25,16 +27,16 @@ export function TechModal({ state, onUnlock, onClose }: Props) {
             <div key={branch} className="tech-branch">
               <h3>{BRANCH_LABEL[branch]}</h3>
               {techsForBranch(branch).map((tech) => {
-                const unlocked = state.unlockedTech.includes(tech.id);
+                const unlocked = unlockedForSide.includes(tech.id);
                 const priorTiersDone = techsForBranch(branch)
                   .filter((t) => t.tier < tech.tier)
-                  .every((t) => state.unlockedTech.includes(t.id));
+                  .every((t) => unlockedForSide.includes(t.id));
                 const locked = !priorTiersDone;
                 return (
                   <button
                     key={tech.id}
                     className={`tech-node ${unlocked ? 'unlocked' : locked ? 'locked' : ''}`}
-                    disabled={unlocked || locked || state.momentum < tech.cost}
+                    disabled={unlocked || locked || state.momentum[side] < tech.cost}
                     onClick={() => onUnlock(tech.id, tech.cost)}
                   >
                     <strong>{tech.name}</strong>

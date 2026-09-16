@@ -1,5 +1,5 @@
 import { generateMap } from './mapgen';
-import { startingTraits } from './guilds';
+import { startingTech, startingTraits } from './guilds';
 import { axialKey, type GameState, type GuildId, type Settlement, type Guardian } from './types';
 import { tilesInRadius } from './hex';
 
@@ -7,7 +7,7 @@ const GUARDIANS: Omit<Guardian, 'q' | 'r'>[] = [
   { id: 'emberhorn', name: 'Emberhorn', theme: 'Industry and exhaustion', strength: 6, resolved: false },
 ];
 
-export function createNewGame(seed: string, guild: GuildId, mapRadius = 6): GameState {
+function buildBoard(seed: string, mapRadius: number) {
   const { tiles, playerStart, rivalStart, beaconPos } = generateMap(seed, mapRadius);
 
   const playerSettlement: Settlement = {
@@ -34,17 +34,6 @@ export function createNewGame(seed: string, guild: GuildId, mapRadius = 6): Game
   tiles[axialKey(playerStart)].settlementId = playerSettlement.id;
   tiles[axialKey(rivalStart)].settlementId = rivalSettlement.id;
 
-  // Reveal starting territory around the Founder.
-  for (const pos of tilesInRadius(playerStart, 1)) {
-    const t = tiles[axialKey(pos)];
-    if (t) t.veil = 'revealed';
-  }
-  // Give clues one ring further out.
-  for (const pos of tilesInRadius(playerStart, 2)) {
-    const t = tiles[axialKey(pos)];
-    if (t && t.veil === 'hidden') t.veil = 'clue';
-  }
-
   const guardianDef = GUARDIANS[0];
   const guardian: Guardian = { ...guardianDef, q: beaconPos.q, r: beaconPos.r };
   const beaconTile = tiles[axialKey(beaconPos)];
@@ -54,8 +43,29 @@ export function createNewGame(seed: string, guild: GuildId, mapRadius = 6): Game
   if (beaconTile.veil === 'hidden') beaconTile.veil = 'clue';
   beaconTile.clueHint = 'A distant pulse answers your Signal, faint but real.';
 
+  return { tiles, playerStart, rivalStart, guardian, playerSettlement, rivalSettlement };
+}
+
+function revealAround(tiles: GameState['tiles'], center: { q: number; r: number }) {
+  for (const pos of tilesInRadius(center, 1)) {
+    const t = tiles[axialKey(pos)];
+    if (t) t.veil = 'revealed';
+  }
+  for (const pos of tilesInRadius(center, 2)) {
+    const t = tiles[axialKey(pos)];
+    if (t && t.veil === 'hidden') t.veil = 'clue';
+  }
+}
+
+export function createNewGame(seed: string, guild: GuildId, mapRadius = 6): GameState {
+  const { tiles, playerStart, rivalStart, guardian, playerSettlement, rivalSettlement } = buildBoard(seed, mapRadius);
+  // Solo mode: only the human's own starting area is revealed — the AI rival's
+  // camp stays hidden behind the Veil like any other undiscovered territory.
+  revealAround(tiles, playerStart);
+
   return {
     seed,
+    mode: 'solo',
     turn: 1,
     phase: 'intro',
     mapRadius,
@@ -66,18 +76,15 @@ export function createNewGame(seed: string, guild: GuildId, mapRadius = 6): Game
     },
     routes: [],
     guardian,
-    founder: {
-      q: playerStart.q,
-      r: playerStart.r,
-      movement: 2,
-      movementRemaining: 2,
-      retreating: false,
+    founders: {
+      player: { q: playerStart.q, r: playerStart.r, movement: 2, movementRemaining: 2, retreating: false },
+      rival: { q: rivalStart.q, r: rivalStart.r, movement: 2, movementRemaining: 2, retreating: false },
     },
-    guild,
-    traits: startingTraits(guild),
-    momentum: 5,
-    rivalMomentum: 5,
-    unlockedTech: [],
+    activeSide: 'player',
+    guilds: { player: guild, rival: 'forgeborn' },
+    traits: { player: startingTraits(guild), rival: startingTraits('forgeborn') },
+    momentum: { player: 5, rival: 5 },
+    unlockedTech: { player: startingTech(guild), rival: startingTech('forgeborn') },
     journal: [
       {
         id: 'intro',
@@ -90,5 +97,55 @@ export function createNewGame(seed: string, guild: GuildId, mapRadius = 6): Game
     beaconActivated: false,
     lastRivalIntent: null,
     ending: null,
+    winnerSide: null,
+  };
+}
+
+/** Two human founders race the same map to the same Beacon, alternating turns. No AI, no direct PvP combat yet (see ROADMAP.md). */
+export function createMultiplayerGame(seed: string, guildA: GuildId, guildB: GuildId, mapRadius = 6): GameState {
+  const { tiles, playerStart, rivalStart, guardian, playerSettlement, rivalSettlement } = buildBoard(seed, mapRadius);
+  playerSettlement.name = 'Player 1 Landing';
+  rivalSettlement.name = 'Player 2 Landing';
+  // Both humans see their own starting area. The Veil itself is shared world
+  // state (see ROADMAP.md) — exploring near your rival's camp will reveal it
+  // to both of you, which is an intentional "shared unknown" for this race format.
+  revealAround(tiles, playerStart);
+  revealAround(tiles, rivalStart);
+
+  return {
+    seed,
+    mode: 'multiplayer',
+    turn: 1,
+    phase: 'intro',
+    mapRadius,
+    tiles,
+    settlements: {
+      [playerSettlement.id]: playerSettlement,
+      [rivalSettlement.id]: rivalSettlement,
+    },
+    routes: [],
+    guardian,
+    founders: {
+      player: { q: playerStart.q, r: playerStart.r, movement: 2, movementRemaining: 2, retreating: false },
+      rival: { q: rivalStart.q, r: rivalStart.r, movement: 2, movementRemaining: 2, retreating: false },
+    },
+    activeSide: 'player',
+    guilds: { player: guildA, rival: guildB },
+    traits: { player: startingTraits(guildA), rival: startingTraits(guildB) },
+    momentum: { player: 5, rival: 5 },
+    unlockedTech: { player: startingTech(guildA), rival: startingTech(guildB) },
+    journal: [
+      {
+        id: 'intro',
+        turn: 1,
+        title: 'Two Signals',
+        text: 'Two Founders, two fragments of the same broken Network, racing the same unknown world toward the same distant Beacon.',
+      },
+    ],
+    pendingChallenge: null,
+    beaconActivated: false,
+    lastRivalIntent: null,
+    ending: null,
+    winnerSide: null,
   };
 }

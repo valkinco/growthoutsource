@@ -144,6 +144,19 @@ img { max-width: 100%; }
   pointer-events: none;
 }
 
+.room-code-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: rgba(10, 20, 32, 0.85);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 4px 10px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+
 .tile-info-panel {
   position: absolute;
   top: 12px;
@@ -393,8 +406,62 @@ button {
 .guild-desc { font-size: 12px; color: var(--muted); margin: 0 0 8px; }
 .guild-strength { font-size: 12px; color: #6fdc9a; margin: 2px 0; }
 .guild-weakness { font-size: 12px; color: var(--danger); margin: 2px 0; }
+.guild-starting-tech { font-size: 11px; color: var(--accent); margin: 6px 0 0; padding-top: 6px; border-top: 1px solid var(--line); }
 
 .stats-line { color: var(--muted); font-size: 13px; }
+
+.score-board {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 18px;
+  margin: 18px 0;
+  text-align: center;
+}
+.score-total { font-size: 40px; font-weight: 900; color: var(--gold); line-height: 1; }
+.score-total-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px; }
+.score-rows { text-align: left; border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
+.score-row { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); padding: 3px 0; }
+.score-row span:last-child { color: var(--text); font-weight: 600; }
+
+.menu-choices { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; }
+.menu-secondary { width: 100%; text-transform: none; }
+
+.room-code {
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: 0.3em;
+  color: var(--gold);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px;
+  margin: 14px 0;
+}
+
+.code-input {
+  width: 100%;
+  min-height: 48px;
+  font-size: 22px;
+  letter-spacing: 0.3em;
+  text-align: center;
+  text-transform: uppercase;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--text);
+  margin-top: 12px;
+}
+
+.error-line { color: var(--danger); font-size: 13px; margin-top: 10px; }
+
+.waiting-bar {
+  flex: 1;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  padding: 12px;
+}
 
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }

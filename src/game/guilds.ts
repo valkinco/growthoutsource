@@ -1,4 +1,4 @@
-import type { Guild, Traits } from './types';
+import type { Guild, GuildId, Traits } from './types';
 
 export const GUILDS: Guild[] = [
   {
@@ -40,4 +40,18 @@ export function startingTraits(guildId: string): Traits {
   const guild = GUILDS.find((g) => g.id === guildId);
   if (guild) base[guild.coreTrait] = 3;
   return base;
+}
+
+// Each Guild opens with one free tier-1 tech in its signature branch — a direct
+// nod to how Polytopia's tribes each start with a unique tech, which is a big
+// part of why tribe choice changes your opening moves rather than just a stat.
+const STARTING_TECH: Record<GuildId, string> = {
+  pathfinders: 'surveying',
+  forgeborn: 'workshops',
+  keepers: 'trade',
+  unbroken: 'negotiation',
+};
+
+export function startingTech(guildId: GuildId): string[] {
+  return [STARTING_TECH[guildId]];
 }

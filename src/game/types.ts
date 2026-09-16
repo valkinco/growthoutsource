@@ -1,5 +1,9 @@
 // Core data model for Growthbound: The Last Signal.
 // Kept free of any rendering/DOM concerns so it can run headless (tests, sims, future native app).
+//
+// The state is indexed by "side" (player/rival) for founder, momentum, guild, traits,
+// and tech so the same engine drives both Solo (rival = AI) and async 2-player
+// (rival = a second human) without two parallel game implementations.
 
 export type Axial = { q: number; r: number };
 
@@ -33,6 +37,10 @@ export interface Tile {
 }
 
 export type PlayerId = 'player' | 'rival';
+
+export function otherSide(side: PlayerId): PlayerId {
+  return side === 'player' ? 'rival' : 'player';
+}
 
 export type SettlementLevel = 'outpost' | 'town' | 'city';
 export type Specialization = 'maker' | 'market' | 'watchtower' | 'bastion' | null;
@@ -110,8 +118,19 @@ export interface StoryEntry {
 
 export type GamePhase = 'intro' | 'playing' | 'challenge' | 'victory' | 'defeat';
 
+export type GameMode = 'solo' | 'multiplayer';
+
+export interface FounderState {
+  q: number;
+  r: number;
+  movement: number;
+  movementRemaining: number;
+  retreating: boolean;
+}
+
 export interface GameState {
   seed: string;
+  mode: GameMode;
   turn: number;
   phase: GamePhase;
   mapRadius: number;
@@ -119,21 +138,18 @@ export interface GameState {
   settlements: Record<string, Settlement>;
   routes: Route[];
   guardian: Guardian;
-  founder: {
-    q: number;
-    r: number;
-    movement: number;
-    movementRemaining: number;
-    retreating: boolean;
-  };
-  guild: GuildId;
-  traits: Traits;
-  momentum: number;
-  rivalMomentum: number;
-  unlockedTech: string[];
+  founders: Record<PlayerId, FounderState>;
+  /** whose turn it is to act; always 'player' in Solo mode (the AI never "acts" through a founder) */
+  activeSide: PlayerId;
+  guilds: Record<PlayerId, GuildId>;
+  traits: Record<PlayerId, Traits>;
+  momentum: Record<PlayerId, number>;
+  unlockedTech: Record<PlayerId, string[]>;
   journal: StoryEntry[];
   pendingChallenge: { targetQ: number; targetR: number; kind: 'guardian' | 'rival' } | null;
   beaconActivated: boolean;
   lastRivalIntent: ChallengeMove | null;
   ending: string | null;
+  /** set once the campaign ends, so a multiplayer client can tell "you won" from "you lost" */
+  winnerSide: PlayerId | null;
 }

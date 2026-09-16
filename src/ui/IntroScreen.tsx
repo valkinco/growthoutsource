@@ -1,6 +1,12 @@
 import { useState } from 'react';
-import { GUILDS } from '../game/guilds';
+import { GUILDS, startingTech } from '../game/guilds';
+import { TECH_TREE } from '../game/tech';
 import type { GuildId } from '../game/types';
+
+function startingTechName(guildId: GuildId): string {
+  const id = startingTech(guildId)[0];
+  return TECH_TREE.find((t) => t.id === id)?.name ?? '';
+}
 
 interface Props {
   onStart: (guild: GuildId) => void;
@@ -52,6 +58,7 @@ export function IntroScreen({ onStart }: Props) {
               <p className="guild-desc">{g.description}</p>
               <p className="guild-strength">+ {g.strength}</p>
               <p className="guild-weakness">{'−'} {g.weakness}</p>
+              <p className="guild-starting-tech">Starts with: {startingTechName(g.id)}</p>
             </button>
           ))}
         </div>

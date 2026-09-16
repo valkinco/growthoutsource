@@ -3,28 +3,17 @@ import { rivalTurn, rivalIntent } from './ai';
 import { FOUND_SETTLEMENT_COST, has, routeCost, settlementOutput, upgradeCost } from './costs';
 import { guildComebackBonus, guildLossMitigation, guildRevealBonus } from './guildEffects';
 import { tilesInRadius, cubeDistance } from './hex';
-import { axialKey, type Axial, type ChallengeMove, type ChallengeResult, type GameState, type Settlement, type Specialization } from './types';
-
-function nearestOwnSettlement(state: GameState, from: Axial): Settlement | undefined {
-  const owned = Object.values(state.settlements).filter((s) => s.owner === 'player');
-  if (!owned.length) return undefined;
-  return owned.reduce((best, s) => (cubeDistance(from, s) < cubeDistance(from, best) ? s : best));
-}
-
-/** Losing a Challenge sends the Founder home rather than just taxing Momentum — failure becomes a story beat, not a dead end. */
-function retreatFounder(next: GameState, reason: string) {
-  const home = nearestOwnSettlement(next, next.founder);
-  if (!home) return;
-  next.founder.q = home.q;
-  next.founder.r = home.r;
-  next.founder.retreating = true;
-  next.journal.push({
-    id: `retreat-${next.turn}-${home.id}`,
-    turn: next.turn,
-    title: 'A Setback',
-    text: `${reason} The Founder falls back to ${home.name} to regroup.`,
-  });
-}
+import {
+  axialKey,
+  otherSide,
+  type Axial,
+  type ChallengeMove,
+  type ChallengeResult,
+  type GameState,
+  type PlayerId,
+  type Settlement,
+  type Specialization,
+} from './types';
 
 export interface ActionOutcome {
   state: GameState;
@@ -42,26 +31,51 @@ function reveal(state: GameState, center: Axial, radius: number) {
   }
 }
 
+function nearestOwnSettlement(state: GameState, side: PlayerId, from: Axial): Settlement | undefined {
+  const owned = Object.values(state.settlements).filter((s) => s.owner === side);
+  if (!owned.length) return undefined;
+  return owned.reduce((best, s) => (cubeDistance(from, s) < cubeDistance(from, best) ? s : best));
+}
+
+/** Losing a Challenge sends the Founder home rather than just taxing Momentum — failure becomes a story beat, not a dead end. */
+function retreatFounder(next: GameState, side: PlayerId, reason: string) {
+  const founder = next.founders[side];
+  const home = nearestOwnSettlement(next, side, founder);
+  if (!home) return;
+  founder.q = home.q;
+  founder.r = home.r;
+  founder.retreating = true;
+  next.journal.push({
+    id: `retreat-${next.turn}-${home.id}`,
+    turn: next.turn,
+    title: 'A Setback',
+    text: `${reason} The Founder falls back to ${home.name} to regroup.`,
+  });
+}
+
 export function moveFounder(state: GameState, target: Axial): ActionOutcome {
   const next = structuredClone(state);
+  const side = next.activeSide;
+  const founder = next.founders[side];
   const key = axialKey(target);
   const tile = next.tiles[key];
   if (!tile) return { state, message: "That's beyond the world's edge." };
 
-  const dist = cubeDistance({ q: next.founder.q, r: next.founder.r }, target);
+  const dist = cubeDistance({ q: founder.q, r: founder.r }, target);
   if (dist !== 1) return { state, message: 'The Founder can only step to an adjacent tile.' };
   if (tile.terrain === 'water' || tile.terrain === 'mountain') {
     return { state, message: 'That terrain blocks the way for now — a route could open it later.' };
   }
 
-  const rivalOwned = tile.settlementId && next.settlements[tile.settlementId]?.owner === 'rival';
+  const destSettlement = tile.settlementId ? next.settlements[tile.settlementId] : undefined;
   const guardianHere = !!tile.guardianId;
 
-  // Roads waives movement only between the player's OWN connected settlements —
-  // previously this checked only "some settlement exists at each end," which let
-  // the Founder move free between unconnected or even enemy-held tiles.
-  const originTile = next.tiles[axialKey({ q: next.founder.q, r: next.founder.r })];
-  const destSettlement = tile.settlementId ? next.settlements[tile.settlementId] : undefined;
+  if (destSettlement && destSettlement.owner !== side && next.mode === 'multiplayer') {
+    // No direct Founder-vs-Founder combat yet (see ROADMAP.md) — it's a race, not a fight.
+    return { state, message: "Your rival holds this settlement. There's no direct challenge between Founders yet — race them to the Beacon instead." };
+  }
+
+  const originTile = next.tiles[axialKey({ q: founder.q, r: founder.r })];
   const originSettlement = originTile.settlementId ? next.settlements[originTile.settlementId] : undefined;
   const routeLinksThem =
     !!originSettlement &&
@@ -71,28 +85,29 @@ export function moveFounder(state: GameState, target: Axial): ActionOutcome {
         (r.a === originSettlement.id && r.b === destSettlement.id) ||
         (r.a === destSettlement.id && r.b === originSettlement.id)
     );
+  // Roads waives movement only between the player's OWN connected settlements.
   const usingRoad =
-    has(next, 'roads') &&
-    originSettlement?.owner === 'player' &&
-    destSettlement?.owner === 'player' &&
+    has(next, side, 'roads') &&
+    originSettlement?.owner === side &&
+    destSettlement?.owner === side &&
     routeLinksThem;
 
   if (!usingRoad) {
-    if (next.founder.movementRemaining <= 0) return { state, message: 'The Founder has no movement left this turn.' };
-    next.founder.movementRemaining -= 1;
+    if (founder.movementRemaining <= 0) return { state, message: 'The Founder has no movement left this turn.' };
+    founder.movementRemaining -= 1;
   }
 
-  next.founder.q = target.q;
-  next.founder.r = target.r;
+  founder.q = target.q;
+  founder.r = target.r;
 
-  const revealRadius = (has(next, 'surveying') ? 2 : 1) + guildRevealBonus(next);
+  const revealRadius = (has(next, side, 'surveying') ? 2 : 1) + guildRevealBonus(next, side);
   reveal(next, target, revealRadius);
 
   let message: string | undefined;
 
   if (tile.terrain === 'ruins' && !tile.settlementId) {
     tile.terrain = 'plains';
-    next.momentum += 3;
+    next.momentum[side] += 3;
     next.journal.push({
       id: `ruins-${next.turn}-${key}`,
       turn: next.turn,
@@ -105,7 +120,8 @@ export function moveFounder(state: GameState, target: Axial): ActionOutcome {
   if (guardianHere) {
     next.pendingChallenge = { targetQ: target.q, targetR: target.r, kind: 'guardian' };
     message = `${next.guardian.name} stands before the Beacon, ${next.guardian.theme.toLowerCase()} radiating from it.`;
-  } else if (rivalOwned) {
+  } else if (destSettlement && destSettlement.owner !== side) {
+    // Solo mode only (multiplayer already returned above): a Challenge against the AI rival.
     next.pendingChallenge = { targetQ: target.q, targetR: target.r, kind: 'rival' };
     message = 'The rival faction holds this ground. Choose how to respond.';
   }
@@ -115,20 +131,23 @@ export function moveFounder(state: GameState, target: Axial): ActionOutcome {
 
 export function foundSettlement(state: GameState, name: string): ActionOutcome {
   const next = structuredClone(state);
-  const key = axialKey({ q: next.founder.q, r: next.founder.r });
+  const side = next.activeSide;
+  const founder = next.founders[side];
+  const key = axialKey({ q: founder.q, r: founder.r });
   const tile = next.tiles[key];
   if (!tile) return { state, message: 'Invalid location.' };
   if (tile.settlementId) return { state, message: 'A settlement already stands here.' };
   if (!['plains', 'forest', 'resource'].includes(tile.terrain)) {
     return { state, message: 'This terrain cannot support a settlement yet.' };
   }
-  if (next.momentum < FOUND_SETTLEMENT_COST) return { state, message: 'Not enough Momentum to found a settlement.' };
+  if (next.momentum[side] < FOUND_SETTLEMENT_COST) return { state, message: 'Not enough Momentum to found a settlement.' };
 
-  next.momentum -= FOUND_SETTLEMENT_COST;
-  const id = `settlement-player-${Object.keys(next.settlements).length + 1}`;
+  next.momentum[side] -= FOUND_SETTLEMENT_COST;
+  const ownedCount = Object.values(next.settlements).filter((s) => s.owner === side).length;
+  const id = `settlement-${side}-${ownedCount + 1}`;
   next.settlements[id] = {
     id,
-    owner: 'player',
+    owner: side,
     q: tile.q,
     r: tile.r,
     level: 'outpost',
@@ -142,21 +161,23 @@ export function foundSettlement(state: GameState, name: string): ActionOutcome {
 
 export function upgradeSettlement(state: GameState, settlementId: string): ActionOutcome {
   const next = structuredClone(state);
+  const side = next.activeSide;
   const s = next.settlements[settlementId];
-  if (!s || s.owner !== 'player') return { state, message: 'You can only upgrade your own settlements.' };
+  if (!s || s.owner !== side) return { state, message: 'You can only upgrade your own settlements.' };
   if (s.level === 'city') return { state, message: 'This settlement has already reached its full height.' };
   const toLevel = s.level === 'outpost' ? 'town' : 'city';
-  const cost = upgradeCost(next, toLevel);
-  if (next.momentum < cost) return { state, message: `Needs ${cost} Momentum to upgrade.` };
-  next.momentum -= cost;
+  const cost = upgradeCost(next, side, toLevel);
+  if (next.momentum[side] < cost) return { state, message: `Needs ${cost} Momentum to upgrade.` };
+  next.momentum[side] -= cost;
   s.level = toLevel;
   return { state: next, message: `${s.name} has grown into a ${toLevel}.` };
 }
 
 export function setSpecialization(state: GameState, settlementId: string, spec: Specialization): ActionOutcome {
   const next = structuredClone(state);
+  const side = next.activeSide;
   const s = next.settlements[settlementId];
-  if (!s || s.owner !== 'player') return { state, message: 'Invalid settlement.' };
+  if (!s || s.owner !== side) return { state, message: 'Invalid settlement.' };
   if (s.level === 'outpost') return { state, message: 'Grow this settlement to a Town before specializing.' };
   if (s.specialization) return { state, message: 'This settlement has already chosen its path.' };
   s.specialization = spec;
@@ -165,24 +186,25 @@ export function setSpecialization(state: GameState, settlementId: string, spec: 
 
 export function connectSettlements(state: GameState, aId: string, bId: string): ActionOutcome {
   const next = structuredClone(state);
+  const side = next.activeSide;
   const a = next.settlements[aId];
   const b = next.settlements[bId];
-  if (!a || !b || a.owner !== 'player' || b.owner !== 'player') {
+  if (!a || !b || a.owner !== side || b.owner !== side) {
     return { state, message: 'You can only connect your own settlements.' };
   }
   const dist = cubeDistance({ q: a.q, r: a.r }, { q: b.q, r: b.r });
   if (dist > 4) return { state, message: 'These settlements are too far apart to connect yet.' };
   const already = next.routes.some((r) => (r.a === aId && r.b === bId) || (r.a === bId && r.b === aId));
   if (already) return { state, message: 'A route already links these settlements.' };
-  const cost = routeCost(next);
-  if (next.momentum < cost) return { state, message: `Needs ${cost} Momentum to build this route.` };
+  const cost = routeCost(next, side);
+  if (next.momentum[side] < cost) return { state, message: `Needs ${cost} Momentum to build this route.` };
 
-  next.momentum -= cost;
+  next.momentum[side] -= cost;
   next.routes.push({ id: `route-${next.routes.length + 1}`, a: aId, b: bId });
   a.connected = true;
   b.connected = true;
 
-  if (has(next, 'shared-knowledge')) reveal(next, { q: b.q, r: b.r }, 1);
+  if (has(next, side, 'shared-knowledge')) reveal(next, { q: b.q, r: b.r }, 1);
 
   return { state: next, message: `${a.name} and ${b.name} are now connected.` };
 }
@@ -190,18 +212,20 @@ export function connectSettlements(state: GameState, aId: string, bId: string): 
 /** Lets the Founder try the Guardian again while still standing on its tile, instead of forcing a step-off-and-back-on to re-trigger the encounter. */
 export function openGuardianChallenge(state: GameState): ActionOutcome {
   const next = structuredClone(state);
-  const tile = next.tiles[axialKey({ q: next.founder.q, r: next.founder.r })];
+  const founder = next.founders[next.activeSide];
+  const tile = next.tiles[axialKey({ q: founder.q, r: founder.r })];
   if (!tile?.guardianId || next.guardian.resolved) return { state, message: 'Nothing here to challenge.' };
-  next.pendingChallenge = { targetQ: next.founder.q, targetR: next.founder.r, kind: 'guardian' };
+  next.pendingChallenge = { targetQ: founder.q, targetR: founder.r, kind: 'guardian' };
   return { state: next };
 }
 
 export function unlockTech(state: GameState, techId: string, cost: number): ActionOutcome {
   const next = structuredClone(state);
-  if (next.unlockedTech.includes(techId)) return { state, message: 'Already unlocked.' };
-  if (next.momentum < cost) return { state, message: `Needs ${cost} Momentum.` };
-  next.momentum -= cost;
-  next.unlockedTech.push(techId);
+  const side = next.activeSide;
+  if (next.unlockedTech[side].includes(techId)) return { state, message: 'Already unlocked.' };
+  if (next.momentum[side] < cost) return { state, message: `Needs ${cost} Momentum.` };
+  next.momentum[side] -= cost;
+  next.unlockedTech[side].push(techId);
   return { state: next, message: `${techId} unlocked.` };
 }
 
@@ -211,35 +235,39 @@ function triangleResult(playerMove: ChallengeMove, rivalMove: ChallengeMove): 'p
   return beats[playerMove] === rivalMove ? 'player' : 'rival';
 }
 
+/** Solo mode only: resolves a Challenge against the AI-controlled rival settlement. */
 export function resolveRivalChallenge(state: GameState, playerMove: ChallengeMove): { state: GameState; result: ChallengeResult } {
   const next = structuredClone(state);
+  const side = next.activeSide;
+  const opp = otherSide(side);
   const rivalMove = rivalIntent(next);
   const outcome = triangleResult(playerMove, rivalMove);
 
   const traitBoost: Record<ChallengeMove, number> = {
-    push: next.traits.grit,
-    build: next.traits.execution,
-    endure: next.traits.resilience,
+    push: next.traits[side].grit,
+    build: next.traits[side].execution,
+    endure: next.traits[side].resilience,
   };
 
-  const playerScore = next.momentum * 0.5 + traitBoost[playerMove] * 2 + guildComebackBonus(next) + (outcome === 'player' ? 5 : 0);
-  const rivalScore = next.rivalMomentum * 0.5 + (outcome === 'rival' ? 5 : 0);
+  const playerScore = next.momentum[side] * 0.5 + traitBoost[playerMove] * 2 + guildComebackBonus(next, side) + (outcome === 'player' ? 5 : 0);
+  const rivalScore = next.momentum[opp] * 0.5 + (outcome === 'rival' ? 5 : 0);
 
-  const winner: 'player' | 'rival' | 'draw' = playerScore === rivalScore ? 'draw' : playerScore > rivalScore ? 'player' : 'rival';
+  const winner: PlayerId | 'draw' = playerScore === rivalScore ? 'draw' : playerScore > rivalScore ? side : opp;
 
   let log = '';
-  if (winner === 'player') {
-    const tile = next.tiles[axialKey({ q: next.founder.q, r: next.founder.r })];
+  if (winner === side) {
+    const founder = next.founders[side];
+    const tile = next.tiles[axialKey({ q: founder.q, r: founder.r })];
     const rivalSettlementId = tile.settlementId;
     if (rivalSettlementId && next.settlements[rivalSettlementId]) {
-      next.settlements[rivalSettlementId].owner = 'player';
+      next.settlements[rivalSettlementId].owner = side;
       next.settlements[rivalSettlementId].level = 'outpost';
     }
-    next.momentum = Math.max(0, next.momentum - Math.round(playerScore * 0.15));
+    next.momentum[side] = Math.max(0, next.momentum[side] - Math.round(playerScore * 0.15));
     log = `Your ${playerMove.toUpperCase()} overcame their ${rivalMove.toUpperCase()}. The settlement is yours.`;
-  } else if (winner === 'rival') {
-    next.momentum = Math.max(0, next.momentum - guildLossMitigation(next, 3));
-    retreatFounder(next, `Their ${rivalMove.toUpperCase()} answered your ${playerMove.toUpperCase()}.`);
+  } else if (winner === opp) {
+    next.momentum[side] = Math.max(0, next.momentum[side] - guildLossMitigation(next, side, 3));
+    retreatFounder(next, side, `Their ${rivalMove.toUpperCase()} answered your ${playerMove.toUpperCase()}.`);
     log = `Their ${rivalMove.toUpperCase()} answered your ${playerMove.toUpperCase()}. You withdraw, bruised but intact.`;
   } else {
     log = 'Neither side yields. The standoff continues.';
@@ -256,23 +284,25 @@ export function resolveRivalChallenge(state: GameState, playerMove: ChallengeMov
 
 export function resolveGuardianChallenge(state: GameState, playerMove: ChallengeMove): { state: GameState; result: ChallengeResult } {
   const next = structuredClone(state);
+  const side = next.activeSide;
   const g = next.guardian;
 
   const power: Record<ChallengeMove, number> = {
-    push: next.momentum * 0.6 + next.traits.grit * 2.5,
-    build: next.momentum * 0.4 + next.traits.execution * 3,
-    endure: next.momentum * 0.3 + next.traits.resilience * 3.5,
+    push: next.momentum[side] * 0.6 + next.traits[side].grit * 2.5,
+    build: next.momentum[side] * 0.4 + next.traits[side].execution * 3,
+    endure: next.momentum[side] * 0.3 + next.traits[side].resilience * 3.5,
   };
   const playerScore = power[playerMove];
   const rivalScore = g.strength * 3;
-  const winner: 'player' | 'rival' = playerScore >= rivalScore ? 'player' : 'rival';
+  const winner: PlayerId = playerScore >= rivalScore ? side : otherSide(side);
 
   let log = '';
-  if (winner === 'player') {
+  if (winner === side) {
     g.resolved = true;
     g.outcome = playerMove === 'push' ? 'defeated' : playerMove === 'build' ? 'befriended' : 'released';
     next.beaconActivated = true;
     next.phase = 'victory';
+    next.winnerSide = side;
     next.ending =
       playerMove === 'push'
         ? 'The Guardian falls silent. The Beacon is yours by force.'
@@ -287,37 +317,45 @@ export function resolveGuardianChallenge(state: GameState, playerMove: Challenge
     });
     log = `Success! ${next.ending}`;
   } else {
-    next.momentum = Math.max(0, next.momentum - guildLossMitigation(next, 4));
-    retreatFounder(next, `${g.name} is still too strong.`);
+    next.momentum[side] = Math.max(0, next.momentum[side] - guildLossMitigation(next, side, 4));
+    retreatFounder(next, side, `${g.name} is still too strong.`);
     log = `${g.name} is still too strong. You retreat to gather more strength before trying again.`;
   }
 
   next.pendingChallenge = null;
-  return { state: next, result: { playerMove, rivalMove: 'endure', playerScore, rivalScore, winner: winner === 'player' ? 'player' : 'rival', log } };
+  return { state: next, result: { playerMove, rivalMove: 'endure', playerScore, rivalScore, winner, log } };
 }
 
 export function endTurn(state: GameState): GameState {
   let next = structuredClone(state);
 
-  for (const s of Object.values(next.settlements)) {
-    if (s.owner === 'player') {
-      next.momentum += settlementOutput(s.level, s.specialization, s.connected);
-    } else {
-      next.rivalMomentum += settlementOutput(s.level, s.specialization, s.connected);
+  if (next.mode === 'solo') {
+    for (const s of Object.values(next.settlements)) {
+      next.momentum[s.owner] += settlementOutput(s.level, s.specialization, s.connected);
     }
-  }
+    next.founders.player.movementRemaining = next.founders.player.movement;
+    next.founders.player.retreating = false;
+    next.turn += 1;
 
-  next.founder.movementRemaining = next.founder.movement;
-  next.founder.retreating = false;
-  next.turn += 1;
+    const rng = new Rng(`${next.seed}-turn-${next.turn}`);
+    next = rivalTurn(next, rng);
 
-  const rng = new Rng(`${next.seed}-turn-${next.turn}`);
-  next = rivalTurn(next, rng);
-
-  const playerHasSettlement = Object.values(next.settlements).some((s) => s.owner === 'player');
-  if (!playerHasSettlement) {
-    next.phase = 'defeat';
-    next.ending = 'Without a settlement to call home, the Network falls silent once more.';
+    const playerHasSettlement = Object.values(next.settlements).some((s) => s.owner === 'player');
+    if (!playerHasSettlement) {
+      next.phase = 'defeat';
+      next.ending = 'Without a settlement to call home, the Network falls silent once more.';
+    }
+  } else {
+    // Multiplayer: only the side ending their turn ticks income, then hand off to the other Founder.
+    const finishedSide = next.activeSide;
+    for (const s of Object.values(next.settlements)) {
+      if (s.owner === finishedSide) next.momentum[finishedSide] += settlementOutput(s.level, s.specialization, s.connected);
+    }
+    next.founders[finishedSide].retreating = false;
+    const nextSide = otherSide(finishedSide);
+    next.founders[nextSide].movementRemaining = next.founders[nextSide].movement;
+    next.activeSide = nextSide;
+    next.turn += 1;
   }
 
   return next;
