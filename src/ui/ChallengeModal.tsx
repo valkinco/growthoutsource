@@ -1,5 +1,5 @@
 import type { ChallengeMove, GameState } from '../game/types';
-import { rivalIntent, guardianDifficultyLabel } from '../game/ai';
+import { perceivedRivalIntent, guardianDifficultyLabel } from '../game/ai';
 
 interface Props {
   state: GameState;
@@ -14,7 +14,7 @@ const MOVE_INFO: Record<ChallengeMove, { label: string; hint: string }> = {
 };
 
 export function ChallengeModal({ state, kind, onChoose }: Props) {
-  const intent = kind === 'rival' ? rivalIntent(state) : null;
+  const perceived = kind === 'rival' ? perceivedRivalIntent(state) : null;
 
   return (
     <div className="modal-overlay">
@@ -26,7 +26,10 @@ export function ChallengeModal({ state, kind, onChoose }: Props) {
             befriend it, or ENDURE and let it release the Beacon on its own.
           </p>
         ) : (
-          <p>Their likely move: <strong>{intent && MOVE_INFO[intent].label}</strong> {'—'} {intent && MOVE_INFO[intent].hint}</p>
+          <p>
+            {perceived?.confident ? 'Their likely move:' : 'Your read on them (uncertain):'}{' '}
+            <strong>{perceived && MOVE_INFO[perceived.move].label}</strong> {'—'} {perceived && MOVE_INFO[perceived.move].hint}
+          </p>
         )}
         <div className="move-grid">
           {(Object.keys(MOVE_INFO) as ChallengeMove[]).map((m) => (

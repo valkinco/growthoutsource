@@ -10,6 +10,7 @@ import {
   unlockTech,
   resolveGuardianChallenge,
   resolveRivalChallenge,
+  openGuardianChallenge,
   endTurn,
 } from './game/actions';
 import { saveGame, loadGame, clearSave } from './game/save';
@@ -130,6 +131,12 @@ export default function App() {
     playSfx(result.winner === 'player' ? (isGuardian ? 'victory' : 'comeback') : 'defeat');
   }
 
+  function handleChallengeGuardian() {
+    if (!state) return;
+    applyOutcome(openGuardianChallenge(state));
+    playSfx('guardian');
+  }
+
   function handleEndTurn() {
     if (!state) return;
     const next = endTurn(state);
@@ -178,6 +185,7 @@ export default function App() {
         onCancelConnect={() => setConnectSourceId(null)}
         onOpenTech={() => setTechOpen(true)}
         onEndTurn={handleEndTurn}
+        onChallengeGuardian={handleChallengeGuardian}
       />
 
       {state.pendingChallenge && (

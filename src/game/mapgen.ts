@@ -1,6 +1,6 @@
 import { Rng } from './rng';
 import { axialKey, type Tile, type TerrainType } from './types';
-import { cubeDistance, tilesInRadius } from './hex';
+import { cubeDistance, neighbors, tilesInRadius } from './hex';
 
 export interface GeneratedMap {
   tiles: Record<string, Tile>;
@@ -71,6 +71,21 @@ export function generateMap(seed: string, mapRadius: number): GeneratedMap {
   });
   const beaconPos = rng.pick(beaconCandidates);
   tiles[axialKey(beaconPos)].terrain = 'beacon';
+
+  // Guarantee the Beacon has at least two passable approach tiles — otherwise a
+  // ring of mountain/water rolled by weightedTerrain could softlock the campaign.
+  const beaconNeighbors = neighbors(beaconPos).filter((p) => tiles[axialKey(p)]);
+  const passable = (p: { q: number; r: number }) => !['mountain', 'water'].includes(tiles[axialKey(p)].terrain);
+  const openApproaches = beaconNeighbors.filter(passable);
+  if (openApproaches.length < 2) {
+    for (const p of beaconNeighbors) {
+      if (openApproaches.length >= 2) break;
+      if (!passable(p)) {
+        tiles[axialKey(p)].terrain = 'plains';
+        openApproaches.push(p);
+      }
+    }
+  }
 
   // Guarantee player start has a resource within 2 tiles and clear expansion lanes.
   const nearStart = tilesInRadius(playerStart, 2).filter((p) => axialKey(p) !== axialKey(playerStart));

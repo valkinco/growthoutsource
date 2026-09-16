@@ -13,15 +13,17 @@ interface Props {
   onCancelConnect: () => void;
   onOpenTech: () => void;
   onEndTurn: () => void;
+  onChallengeGuardian: () => void;
 }
 
 const SPECS: Specialization[] = ['maker', 'market', 'watchtower', 'bastion'];
 
-export function ActionBar({ state, connectMode, onFound, onUpgrade, onSpecialize, onStartConnect, onCancelConnect, onOpenTech, onEndTurn }: Props) {
+export function ActionBar({ state, connectMode, onFound, onUpgrade, onSpecialize, onStartConnect, onCancelConnect, onOpenTech, onEndTurn, onChallengeGuardian }: Props) {
   const [pickingSpec, setPickingSpec] = useState(false);
   const tile = state.tiles[axialKey(state.founder)];
   const settlement = tile?.settlementId ? state.settlements[tile.settlementId] : undefined;
   const ownSettlement = settlement?.owner === 'player' ? settlement : undefined;
+  const canChallengeGuardian = !!tile?.guardianId && !state.guardian.resolved && !state.pendingChallenge;
 
   const canFound = !tile?.settlementId && ['plains', 'forest', 'resource'].includes(tile?.terrain ?? '');
   const upgradeLabel = ownSettlement
@@ -51,6 +53,11 @@ export function ActionBar({ state, connectMode, onFound, onUpgrade, onSpecialize
       ) : (
         <>
           <div className="action-group">
+            {canChallengeGuardian && (
+              <button className="btn-action" onClick={onChallengeGuardian}>
+                Challenge Guardian
+              </button>
+            )}
             {canFound && (
               <button className="btn-action" onClick={onFound}>
                 Found Settlement ({FOUND_SETTLEMENT_COST})

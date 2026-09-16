@@ -1,8 +1,30 @@
 import { Rng } from './rng';
 import { rivalTurn, rivalIntent } from './ai';
 import { FOUND_SETTLEMENT_COST, has, routeCost, settlementOutput, upgradeCost } from './costs';
+import { guildComebackBonus, guildLossMitigation, guildRevealBonus } from './guildEffects';
 import { tilesInRadius, cubeDistance } from './hex';
-import { axialKey, type Axial, type ChallengeMove, type ChallengeResult, type GameState, type Specialization } from './types';
+import { axialKey, type Axial, type ChallengeMove, type ChallengeResult, type GameState, type Settlement, type Specialization } from './types';
+
+function nearestOwnSettlement(state: GameState, from: Axial): Settlement | undefined {
+  const owned = Object.values(state.settlements).filter((s) => s.owner === 'player');
+  if (!owned.length) return undefined;
+  return owned.reduce((best, s) => (cubeDistance(from, s) < cubeDistance(from, best) ? s : best));
+}
+
+/** Losing a Challenge sends the Founder home rather than just taxing Momentum — failure becomes a story beat, not a dead end. */
+function retreatFounder(next: GameState, reason: string) {
+  const home = nearestOwnSettlement(next, next.founder);
+  if (!home) return;
+  next.founder.q = home.q;
+  next.founder.r = home.r;
+  next.founder.retreating = true;
+  next.journal.push({
+    id: `retreat-${next.turn}-${home.id}`,
+    turn: next.turn,
+    title: 'A Setback',
+    text: `${reason} The Founder falls back to ${home.name} to regroup.`,
+  });
+}
 
 export interface ActionOutcome {
   state: GameState;
@@ -35,11 +57,25 @@ export function moveFounder(state: GameState, target: Axial): ActionOutcome {
   const rivalOwned = tile.settlementId && next.settlements[tile.settlementId]?.owner === 'rival';
   const guardianHere = !!tile.guardianId;
 
+  // Roads waives movement only between the player's OWN connected settlements —
+  // previously this checked only "some settlement exists at each end," which let
+  // the Founder move free between unconnected or even enemy-held tiles.
+  const originTile = next.tiles[axialKey({ q: next.founder.q, r: next.founder.r })];
+  const destSettlement = tile.settlementId ? next.settlements[tile.settlementId] : undefined;
+  const originSettlement = originTile.settlementId ? next.settlements[originTile.settlementId] : undefined;
+  const routeLinksThem =
+    !!originSettlement &&
+    !!destSettlement &&
+    next.routes.some(
+      (r) =>
+        (r.a === originSettlement.id && r.b === destSettlement.id) ||
+        (r.a === destSettlement.id && r.b === originSettlement.id)
+    );
   const usingRoad =
     has(next, 'roads') &&
-    tile.settlementId &&
-    next.settlements[tile.settlementId]?.owner === 'player' &&
-    next.tiles[axialKey({ q: next.founder.q, r: next.founder.r })].settlementId;
+    originSettlement?.owner === 'player' &&
+    destSettlement?.owner === 'player' &&
+    routeLinksThem;
 
   if (!usingRoad) {
     if (next.founder.movementRemaining <= 0) return { state, message: 'The Founder has no movement left this turn.' };
@@ -49,7 +85,7 @@ export function moveFounder(state: GameState, target: Axial): ActionOutcome {
   next.founder.q = target.q;
   next.founder.r = target.r;
 
-  const revealRadius = has(next, 'surveying') ? 2 : 1;
+  const revealRadius = (has(next, 'surveying') ? 2 : 1) + guildRevealBonus(next);
   reveal(next, target, revealRadius);
 
   let message: string | undefined;
@@ -151,6 +187,15 @@ export function connectSettlements(state: GameState, aId: string, bId: string): 
   return { state: next, message: `${a.name} and ${b.name} are now connected.` };
 }
 
+/** Lets the Founder try the Guardian again while still standing on its tile, instead of forcing a step-off-and-back-on to re-trigger the encounter. */
+export function openGuardianChallenge(state: GameState): ActionOutcome {
+  const next = structuredClone(state);
+  const tile = next.tiles[axialKey({ q: next.founder.q, r: next.founder.r })];
+  if (!tile?.guardianId || next.guardian.resolved) return { state, message: 'Nothing here to challenge.' };
+  next.pendingChallenge = { targetQ: next.founder.q, targetR: next.founder.r, kind: 'guardian' };
+  return { state: next };
+}
+
 export function unlockTech(state: GameState, techId: string, cost: number): ActionOutcome {
   const next = structuredClone(state);
   if (next.unlockedTech.includes(techId)) return { state, message: 'Already unlocked.' };
@@ -177,7 +222,7 @@ export function resolveRivalChallenge(state: GameState, playerMove: ChallengeMov
     endure: next.traits.resilience,
   };
 
-  const playerScore = next.momentum * 0.5 + traitBoost[playerMove] * 2 + (outcome === 'player' ? 5 : 0);
+  const playerScore = next.momentum * 0.5 + traitBoost[playerMove] * 2 + guildComebackBonus(next) + (outcome === 'player' ? 5 : 0);
   const rivalScore = next.rivalMomentum * 0.5 + (outcome === 'rival' ? 5 : 0);
 
   const winner: 'player' | 'rival' | 'draw' = playerScore === rivalScore ? 'draw' : playerScore > rivalScore ? 'player' : 'rival';
@@ -190,10 +235,11 @@ export function resolveRivalChallenge(state: GameState, playerMove: ChallengeMov
       next.settlements[rivalSettlementId].owner = 'player';
       next.settlements[rivalSettlementId].level = 'outpost';
     }
-    next.momentum -= Math.max(0, Math.round(playerScore * 0.15));
+    next.momentum = Math.max(0, next.momentum - Math.round(playerScore * 0.15));
     log = `Your ${playerMove.toUpperCase()} overcame their ${rivalMove.toUpperCase()}. The settlement is yours.`;
   } else if (winner === 'rival') {
-    next.momentum = Math.max(0, next.momentum - 3);
+    next.momentum = Math.max(0, next.momentum - guildLossMitigation(next, 3));
+    retreatFounder(next, `Their ${rivalMove.toUpperCase()} answered your ${playerMove.toUpperCase()}.`);
     log = `Their ${rivalMove.toUpperCase()} answered your ${playerMove.toUpperCase()}. You withdraw, bruised but intact.`;
   } else {
     log = 'Neither side yields. The standoff continues.';
@@ -241,7 +287,8 @@ export function resolveGuardianChallenge(state: GameState, playerMove: Challenge
     });
     log = `Success! ${next.ending}`;
   } else {
-    next.momentum = Math.max(0, next.momentum - 4);
+    next.momentum = Math.max(0, next.momentum - guildLossMitigation(next, 4));
+    retreatFounder(next, `${g.name} is still too strong.`);
     log = `${g.name} is still too strong. You retreat to gather more strength before trying again.`;
   }
 
@@ -261,6 +308,7 @@ export function endTurn(state: GameState): GameState {
   }
 
   next.founder.movementRemaining = next.founder.movement;
+  next.founder.retreating = false;
   next.turn += 1;
 
   const rng = new Rng(`${next.seed}-turn-${next.turn}`);

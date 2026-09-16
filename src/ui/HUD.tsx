@@ -20,6 +20,11 @@ export function HUD({ state, musicOn, soundOn, onToggleMusic, onToggleSound, onO
           <span className="momentum-label">Momentum</span>
         </div>
         <div className="turn-badge">Turn {state.turn}</div>
+        <div className="movement-pips" aria-label={`${state.founder.movementRemaining} of ${state.founder.movement} moves remaining`}>
+          {Array.from({ length: state.founder.movement }).map((_, i) => (
+            <span key={i} className={`pip ${i < state.founder.movementRemaining ? 'filled' : ''}`} />
+          ))}
+        </div>
       </div>
       <div className="hud-center">
         <span className="guild-tag">{guild?.name}</span>

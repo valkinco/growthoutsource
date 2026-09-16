@@ -27,12 +27,19 @@ export function TileInfoPanel({ state, q, r, onClose }: Props) {
     <div className="tile-info-panel" onClick={onClose}>
       {tile.veil === 'hidden' && <span>Unexplored.</span>}
       {tile.veil === 'clue' && <span>{tile.clueHint ?? 'Something lies beyond the Veil here.'}</span>}
-      {tile.veil === 'revealed' && (
-        <span>
-          {TERRAIN_LABEL[tile.terrain]}
-          {tile.settlementId && state.settlements[tile.settlementId] ? ` — ${state.settlements[tile.settlementId].name}` : ''}
-        </span>
-      )}
+      {tile.veil === 'revealed' && (() => {
+        const settlement = tile.settlementId ? state.settlements[tile.settlementId] : undefined;
+        return (
+          <span>
+            {TERRAIN_LABEL[tile.terrain]}
+            {settlement
+              ? ` — ${settlement.name} (${settlement.owner === 'player' ? 'yours' : 'rival'}, ${settlement.level}${
+                  settlement.specialization ? `, ${settlement.specialization}` : ''
+                }${settlement.connected ? ', connected' : ''})`
+              : ''}
+          </span>
+        );
+      })()}
     </div>
   );
 }

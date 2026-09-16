@@ -64,6 +64,20 @@ img { max-width: 100%; }
 .momentum-value { font-size: 20px; font-weight: 800; color: var(--gold); line-height: 1; }
 .momentum-label { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
 
+.movement-pips {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.pip {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1px solid var(--accent);
+  background: transparent;
+}
+.pip.filled { background: var(--accent); }
+
 .turn-badge {
   font-size: 12px;
   color: var(--muted);

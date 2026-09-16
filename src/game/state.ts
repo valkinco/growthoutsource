@@ -47,7 +47,12 @@ export function createNewGame(seed: string, guild: GuildId, mapRadius = 6): Game
 
   const guardianDef = GUARDIANS[0];
   const guardian: Guardian = { ...guardianDef, q: beaconPos.q, r: beaconPos.r };
-  tiles[axialKey(beaconPos)].guardianId = guardian.id;
+  const beaconTile = tiles[axialKey(beaconPos)];
+  beaconTile.guardianId = guardian.id;
+  // The opening beat promises "one distant Beacon briefly responds" within the
+  // first minute — without this it stays fully hidden behind the Veil for turns.
+  if (beaconTile.veil === 'hidden') beaconTile.veil = 'clue';
+  beaconTile.clueHint = 'A distant pulse answers your Signal, faint but real.';
 
   return {
     seed,
