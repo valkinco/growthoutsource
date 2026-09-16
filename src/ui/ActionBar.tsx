@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { GameState, Specialization } from '../game/types';
+import type { ChallengeMove, GameState, Specialization } from '../game/types';
 import { axialKey } from '../game/types';
 import { FOUND_SETTLEMENT_COST, routeCost, upgradeCost } from '../game/costs';
 
@@ -14,13 +14,29 @@ interface Props {
   onOpenTech: () => void;
   onEndTurn: () => void;
   onChallengeGuardian: () => void;
+  onSetPosture: (move: ChallengeMove) => void;
   isMyTurn: boolean;
 }
 
 const SPECS: Specialization[] = ['maker', 'market', 'watchtower', 'bastion'];
+const POSTURES: ChallengeMove[] = ['push', 'build', 'endure'];
 
-export function ActionBar({ state, connectMode, onFound, onUpgrade, onSpecialize, onStartConnect, onCancelConnect, onOpenTech, onEndTurn, onChallengeGuardian, isMyTurn }: Props) {
+export function ActionBar({
+  state,
+  connectMode,
+  onFound,
+  onUpgrade,
+  onSpecialize,
+  onStartConnect,
+  onCancelConnect,
+  onOpenTech,
+  onEndTurn,
+  onChallengeGuardian,
+  onSetPosture,
+  isMyTurn,
+}: Props) {
   const [pickingSpec, setPickingSpec] = useState(false);
+  const [pickingPosture, setPickingPosture] = useState(false);
   const side = state.activeSide;
 
   if (!isMyTurn) {
@@ -62,6 +78,20 @@ export function ActionBar({ state, connectMode, onFound, onUpgrade, onSpecialize
           ))}
           <button className="btn-ghost" onClick={() => setPickingSpec(false)}>Cancel</button>
         </div>
+      ) : pickingPosture ? (
+        <div className="spec-picker">
+          <span className="posture-label">If challenged while you're away:</span>
+          {POSTURES.map((m) => (
+            <button
+              key={m}
+              className={`btn-secondary ${state.standingPosture[side] === m ? 'active' : ''}`}
+              onClick={() => { onSetPosture(m); setPickingPosture(false); }}
+            >
+              {m}
+            </button>
+          ))}
+          <button className="btn-ghost" onClick={() => setPickingPosture(false)}>Cancel</button>
+        </div>
       ) : (
         <>
           <div className="action-group">
@@ -88,6 +118,11 @@ export function ActionBar({ state, connectMode, onFound, onUpgrade, onSpecialize
             {ownSettlement && (
               <button className="btn-action" onClick={onStartConnect}>
                 Connect ({routeCost(state, side)})
+              </button>
+            )}
+            {state.mode === 'multiplayer' && (
+              <button className="btn-action" onClick={() => setPickingPosture(true)}>
+                Standing Order: {state.standingPosture[side]}
               </button>
             )}
             <button className="btn-action" onClick={onOpenTech}>

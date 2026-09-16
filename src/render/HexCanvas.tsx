@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import type { GameState, TerrainType } from '../game/types';
 import { axialKey } from '../game/types';
 import { axialToPixel, pixelToAxial, cubeDistance } from '../game/hex';
+import { GUILD_COLOR } from '../game/guilds';
 
 // Pseudo-3D palette: each terrain gets a top-face color and a darker "side" shade,
 // plus how tall its bevel stands. This is a general hex-strategy rendering technique
@@ -112,7 +113,7 @@ export function HexCanvas({ state, onTileClick }: Props) {
         } else {
           const style = TERRAIN_STYLE[tile.terrain];
           drawHexFace(ctx, x, y, size, style.top, style.side, style.elevation);
-          drawTerrainIcon(ctx, x, y - style.elevation, tile.terrain, pulse);
+          drawTerrainIcon(ctx, x, y - style.elevation, tile.terrain, pulse, t);
 
           if (tile.guardianId && !state.guardian.resolved) {
             drawGuardian(ctx, x, y - style.elevation, pulse);
@@ -340,7 +341,7 @@ function lighten(hex: string, amt: number): string {
   return `rgb(${r},${g},${b})`;
 }
 
-function drawTerrainIcon(ctx: CanvasRenderingContext2D, x: number, y: number, terrain: TerrainType, pulse: number) {
+function drawTerrainIcon(ctx: CanvasRenderingContext2D, x: number, y: number, terrain: TerrainType, pulse: number, t: number) {
   ctx.save();
   ctx.translate(x, y);
   switch (terrain) {
@@ -372,17 +373,21 @@ function drawTerrainIcon(ctx: CanvasRenderingContext2D, x: number, y: number, te
       ctx.closePath();
       ctx.fill();
       break;
-    case 'water':
-      ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+    case 'water': {
+      // Gentle drifting shimmer instead of a static squiggle — small but reads as "alive."
+      const drift = (t / 900) % (Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255,255,255,0.55)';
       ctx.lineWidth = 2;
-      for (const dy of [-4, 4]) {
+      for (const [i, dy] of [-6, 0, 6].entries()) {
+        const wobble = Math.sin(drift + i * 1.3) * 2;
         ctx.beginPath();
-        ctx.moveTo(-12, dy);
-        ctx.quadraticCurveTo(-6, dy - 5, 0, dy);
-        ctx.quadraticCurveTo(6, dy + 5, 12, dy);
+        ctx.moveTo(-13, dy + wobble);
+        ctx.quadraticCurveTo(-6, dy - 5 + wobble, 0, dy + wobble);
+        ctx.quadraticCurveTo(6, dy + 5 + wobble, 13, dy + wobble);
         ctx.stroke();
       }
       break;
+    }
     case 'resource':
       ctx.fillStyle = '#fff2c2';
       ctx.beginPath();
@@ -494,23 +499,65 @@ function drawSettlement(
   ctx.fill();
   ctx.stroke();
 
-  if (specialization) {
-    ctx.fillStyle = '#fff8e0';
-    ctx.beginPath();
-    ctx.arc(0, 2, 2.4, 0, Math.PI * 2);
-    ctx.fill();
-  }
+  if (specialization) drawSpecializationBadge(ctx, specialization);
 
   ctx.restore();
 }
 
+/** A small badge on the settlement's door face — distinct silhouette per specialization so it reads at a glance, not just "settlement has a dot now." */
+function drawSpecializationBadge(ctx: CanvasRenderingContext2D, specialization: string) {
+  ctx.save();
+  ctx.translate(0, 2.5);
+  ctx.fillStyle = '#2a1c08';
+  ctx.beginPath();
+  ctx.arc(0, 0, 4.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#fff8e0';
+  ctx.strokeStyle = '#2a1c08';
+  ctx.lineWidth = 0.6;
+
+  switch (specialization) {
+    case 'maker': // hammer
+      ctx.save();
+      ctx.rotate(-Math.PI / 4);
+      ctx.fillRect(-0.6, -2.6, 1.2, 3.6);
+      ctx.fillRect(-2, -3.4, 4, 1.6);
+      ctx.restore();
+      break;
+    case 'market': // coin
+      ctx.beginPath();
+      ctx.arc(0, 0, 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      break;
+    case 'watchtower': // eye
+      ctx.beginPath();
+      ctx.moveTo(-2.6, 0);
+      ctx.quadraticCurveTo(0, -2.2, 2.6, 0);
+      ctx.quadraticCurveTo(0, 2.2, -2.6, 0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#2a1c08';
+      ctx.beginPath();
+      ctx.arc(0, 0, 0.8, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    case 'bastion': // shield
+      ctx.beginPath();
+      ctx.moveTo(0, -2.6);
+      ctx.lineTo(2.2, -1.4);
+      ctx.lineTo(2.2, 1);
+      ctx.lineTo(0, 2.6);
+      ctx.lineTo(-2.2, 1);
+      ctx.lineTo(-2.2, -1.4);
+      ctx.closePath();
+      ctx.fill();
+      break;
+  }
+  ctx.restore();
+}
+
 function drawFounder(ctx: CanvasRenderingContext2D, x: number, y: number, guild: string, dimmed = false) {
-  const ring: Record<string, string> = {
-    pathfinders: '#7fd1ff',
-    forgeborn: '#ffb454',
-    unbroken: '#ff7a7a',
-    keepers: '#8fe3a8',
-  };
   ctx.save();
   ctx.globalAlpha = dimmed ? 0.55 : 1;
   ctx.translate(x, y - 10);
@@ -523,7 +570,7 @@ function drawFounder(ctx: CanvasRenderingContext2D, x: number, y: number, guild:
   ctx.beginPath();
   ctx.arc(0, 0, 8, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = ring[guild] ?? '#5aa7ff';
+  ctx.strokeStyle = GUILD_COLOR[guild as keyof typeof GUILD_COLOR] ?? '#5aa7ff';
   ctx.lineWidth = 3;
   ctx.stroke();
   ctx.restore();

@@ -1,6 +1,6 @@
 import { Rng } from './rng';
 import { has } from './costs';
-import { axialKey } from './types';
+import { axialKey, otherSide } from './types';
 import { tilesInRadius } from './hex';
 import type { ChallengeMove, GameState } from './types';
 
@@ -19,16 +19,21 @@ export function rivalIntent(state: GameState): ChallengeMove {
 }
 
 /**
- * What the player is shown before committing to a move. Vision (trait + the
- * Negotiation tech) narrows the gap between this and the true intent above —
- * per the design pillar "Vision improves information but never removes all
- * uncertainty," a low-Vision founder should sometimes be reading it wrong.
+ * What the attacker is shown before committing to a move — against the Solo
+ * AI (rivalIntent) or, in multiplayer, the opponent's standing posture (see
+ * types.ts). Vision (trait + the Negotiation tech) narrows the gap between
+ * this and the true value above — per the design pillar "Vision improves
+ * information but never removes all uncertainty," a low-Vision founder
+ * should sometimes be reading it wrong. The true value always resolves the
+ * Challenge fairly; only the *display* is fuzzed.
  */
-export function perceivedRivalIntent(state: GameState): { move: ChallengeMove; confident: boolean } {
-  const truth = rivalIntent(state);
-  const visionScore = state.traits.player.vision + (has(state, 'player', 'negotiation') ? 2 : 0);
+export function perceivedOpponentMove(state: GameState): { move: ChallengeMove; confident: boolean } {
+  const side = state.activeSide;
+  const opp = otherSide(side);
+  const truth = state.mode === 'multiplayer' ? state.standingPosture[opp] : rivalIntent(state);
+  const visionScore = state.traits[side].vision + (has(state, side, 'negotiation') ? 2 : 0);
   const accuracy = Math.min(0.95, 0.35 + visionScore * 0.12);
-  const founder = state.founders.player;
+  const founder = state.founders[side];
   const rng = new Rng(`${state.seed}-intent-${state.turn}-${founder.q}-${founder.r}`);
   if (rng.next() < accuracy) return { move: truth, confident: accuracy > 0.75 };
   const decoys: ChallengeMove[] = (['push', 'build', 'endure'] as ChallengeMove[]).filter((m) => m !== truth);

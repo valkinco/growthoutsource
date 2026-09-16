@@ -55,3 +55,10 @@ const STARTING_TECH: Record<GuildId, string> = {
 export function startingTech(guildId: GuildId): string[] {
   return [STARTING_TECH[guildId]];
 }
+
+export const GUILD_COLOR: Record<GuildId, string> = {
+  pathfinders: '#7fd1ff',
+  forgeborn: '#ffb454',
+  unbroken: '#ff7a7a',
+  keepers: '#8fe3a8',
+};

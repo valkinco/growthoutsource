@@ -147,6 +147,13 @@ export interface GameState {
   unlockedTech: Record<PlayerId, string[]>;
   journal: StoryEntry[];
   pendingChallenge: { targetQ: number; targetR: number; kind: 'guardian' | 'rival' } | null;
+  /**
+   * Each side's default response if challenged before their next turn — lets
+   * multiplayer Challenges resolve fairly without the defender needing to be
+   * online at that moment. Not shown to the attacker outright; they see the
+   * same Vision-gated fuzzy read as against the Solo AI (see ai.ts).
+   */
+  standingPosture: Record<PlayerId, ChallengeMove>;
   beaconActivated: boolean;
   lastRivalIntent: ChallengeMove | null;
   ending: string | null;

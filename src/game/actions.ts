@@ -70,11 +70,6 @@ export function moveFounder(state: GameState, target: Axial): ActionOutcome {
   const destSettlement = tile.settlementId ? next.settlements[tile.settlementId] : undefined;
   const guardianHere = !!tile.guardianId;
 
-  if (destSettlement && destSettlement.owner !== side && next.mode === 'multiplayer') {
-    // No direct Founder-vs-Founder combat yet (see ROADMAP.md) — it's a race, not a fight.
-    return { state, message: "Your rival holds this settlement. There's no direct challenge between Founders yet — race them to the Beacon instead." };
-  }
-
   const originTile = next.tiles[axialKey({ q: founder.q, r: founder.r })];
   const originSettlement = originTile.settlementId ? next.settlements[originTile.settlementId] : undefined;
   const routeLinksThem =
@@ -121,9 +116,11 @@ export function moveFounder(state: GameState, target: Axial): ActionOutcome {
     next.pendingChallenge = { targetQ: target.q, targetR: target.r, kind: 'guardian' };
     message = `${next.guardian.name} stands before the Beacon, ${next.guardian.theme.toLowerCase()} radiating from it.`;
   } else if (destSettlement && destSettlement.owner !== side) {
-    // Solo mode only (multiplayer already returned above): a Challenge against the AI rival.
     next.pendingChallenge = { targetQ: target.q, targetR: target.r, kind: 'rival' };
-    message = 'The rival faction holds this ground. Choose how to respond.';
+    message =
+      next.mode === 'multiplayer'
+        ? "Your rival holds this ground. They aren't here to answer live, so this resolves against their standing orders."
+        : 'The rival faction holds this ground. Choose how to respond.';
   }
 
   return { state: next, message };
@@ -235,22 +232,38 @@ function triangleResult(playerMove: ChallengeMove, rivalMove: ChallengeMove): 'p
   return beats[playerMove] === rivalMove ? 'player' : 'rival';
 }
 
-/** Solo mode only: resolves a Challenge against the AI-controlled rival settlement. */
+/** Sets the move that will be used to defend this side's settlements if challenged before their next turn (multiplayer only — Solo's AI always uses rivalIntent instead). Free to change, any time on your turn. */
+export function setStandingPosture(state: GameState, move: ChallengeMove): ActionOutcome {
+  const next = structuredClone(state);
+  next.standingPosture[next.activeSide] = move;
+  return { state: next, message: `Standing order set to ${move.toUpperCase()}.` };
+}
+
+function traitBoostFor(state: GameState, side: PlayerId, move: ChallengeMove): number {
+  const t = state.traits[side];
+  return { push: t.grit, build: t.execution, endure: t.resilience }[move];
+}
+
+/**
+ * Resolves a Challenge against the opposing settlement. In Solo mode the
+ * opponent is the AI (rivalIntent, momentum-only scoring — unchanged from
+ * original tuning). In multiplayer the opponent is a real player who isn't
+ * online to react, so their move comes from their standing posture and their
+ * score uses their real traits/guild, same as the attacker's.
+ */
 export function resolveRivalChallenge(state: GameState, playerMove: ChallengeMove): { state: GameState; result: ChallengeResult } {
   const next = structuredClone(state);
   const side = next.activeSide;
   const opp = otherSide(side);
-  const rivalMove = rivalIntent(next);
+  const rivalMove = next.mode === 'multiplayer' ? next.standingPosture[opp] : rivalIntent(next);
   const outcome = triangleResult(playerMove, rivalMove);
 
-  const traitBoost: Record<ChallengeMove, number> = {
-    push: next.traits[side].grit,
-    build: next.traits[side].execution,
-    endure: next.traits[side].resilience,
-  };
-
-  const playerScore = next.momentum[side] * 0.5 + traitBoost[playerMove] * 2 + guildComebackBonus(next, side) + (outcome === 'player' ? 5 : 0);
-  const rivalScore = next.momentum[opp] * 0.5 + (outcome === 'rival' ? 5 : 0);
+  const playerScore =
+    next.momentum[side] * 0.5 + traitBoostFor(next, side, playerMove) * 2 + guildComebackBonus(next, side) + (outcome === 'player' ? 5 : 0);
+  const rivalScore =
+    next.mode === 'multiplayer'
+      ? next.momentum[opp] * 0.5 + traitBoostFor(next, opp, rivalMove) * 2 + guildComebackBonus(next, opp) + (outcome === 'rival' ? 5 : 0)
+      : next.momentum[opp] * 0.5 + (outcome === 'rival' ? 5 : 0);
 
   const winner: PlayerId | 'draw' = playerScore === rivalScore ? 'draw' : playerScore > rivalScore ? side : opp;
 

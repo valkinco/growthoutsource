@@ -17,19 +17,18 @@ Backlog for growing the vertical slice toward the full design brief, informed by
 - **Score breakdown on the end screen** (settlements + tech + banked Momentum + a speed bonus for a fast win) — Polytopia-style "beat your own score" hook for replayability.
 - **Async 2-player mode**, Words-With-Friends style: two humans share one seeded map and race to the same Beacon, alternating turns via a Supabase-backed room (5-letter join code). Built by generalizing the entire engine to be side-indexed (`founders`, `momentum`, `guilds`, `traits`, `unlockedTech` all keyed by `PlayerId`) rather than assuming a single human player — this is what makes Solo (vs AI) and 2-Player share one implementation instead of forking the codebase.
 
-### Known simplification in 2-player mode (read before extending it)
+### 2-player PvP: resolved via "standing posture"
 
-There is **no direct Founder-vs-Founder combat yet** — moving onto a rival-held settlement in multiplayer is blocked with a message rather than opening a Challenge. Two-player games are currently a pure race: same map, same Beacon, whoever gets there first wins. This was a deliberate scope cut, not an oversight — resolving a Challenge needs both sides' input, and async turns mean the defender isn't present to answer live. Options for closing this gap, in rough order of how much they change the feel of the game:
-1. **Standing posture**: each player sets a default Push/Build/Endure response (changeable each of their own turns) that's used if they're challenged before their next turn — closest to the existing solo Challenge UX.
-2. **Turn-delayed challenge**: attacking queues a Challenge that resolves automatically using the defender's *current* board state (momentum/traits) the next time either side loads the game — no extra UI, but the defender never gets to react.
-3. Punt on PvP permanently and lean into the race framing — simplest, and arguably a fine identity for "2-player" distinct from "Solo campaign vs AI."
+Founder-vs-Founder Challenges now work in multiplayer: each side sets a default Push/Build/Endure response (the "Standing Order" button, changeable freely on your own turn) that's used if your rival challenges one of your settlements before your next turn. The attacker still only gets a Vision-gated fuzzy read on it (via `perceivedOpponentMove` in `ai.ts`), same uncertainty model as against the Solo AI — they don't just see the stored value outright. The defender's score in that resolution uses their real traits/guild bonuses, not a flattened placeholder, so it's not just "whoever attacks wins by default."
+
+Not yet verified: this was implemented and reviewed but not exercised through a full live 2-player game (blocked on `supabase/migrations/0001_games.sql` not being run yet — see below). Test as soon as multiplayer is reachable end-to-end: does the default 'endure' posture make new settlements too easy or too hard to take early on? May need per-Guild default postures instead of one global default.
 
 The Veil (fog of war) is also **shared world state** between the two players by design in this pass — exploring near your rival's camp reveals it to both of you. That's a co-opetition choice (shared unknown, competing goal), not a bug, but it does mean a very exploration-heavy opponent partially benefits you too. Worth watching in actual play before deciding whether to split it into per-side veils.
 
 ## Pipeline
 
 ### Now (next session)
-1. **Resolve the 2-player PvP gap** above — pick one of the three options and implement it; right now "2-player" undersells what a Challenge-capable multiplayer mode could be.
+1. **Verify 2-player PvP live** once the Supabase migration is run — the standing-posture mechanic above is implemented and reviewed but has never been exercised through an actual two-device game.
 2. **Second and third Guardian/Beacon.** Tidekeeper (trade/adaptation theme) and Rootfather (stewardship theme) are the next-best value adds — they unlock the "which ending are we building toward" tension the brief's five endings depend on, and validate that the guardian-encounter code generalizes past Emberhorn's numbers.
 3. **Mode select screen** (Quick Journey / Founder's Quest / Long Road) — currently only Quick Journey's map size exists; this is mostly plumbing (map radius + Beacon count params already exist in `createNewGame`) so it's cheap relative to its Definition-of-Done weight.
 4. **Automated balance simulation harness.** Headless `game/actions.ts` was built pure specifically to make this possible — a script that runs N seeded campaigns per Guild/strategy and reports win rates would catch snowball issues (e.g. is Forgeborn's route discount + Living Infrastructure + free Workshops too strong once stacked?) before a human ever needs to grind it out.

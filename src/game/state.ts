@@ -94,6 +94,7 @@ export function createNewGame(seed: string, guild: GuildId, mapRadius = 6): Game
       },
     ],
     pendingChallenge: null,
+    standingPosture: { player: 'endure', rival: 'endure' },
     beaconActivated: false,
     lastRivalIntent: null,
     ending: null,
@@ -101,7 +102,7 @@ export function createNewGame(seed: string, guild: GuildId, mapRadius = 6): Game
   };
 }
 
-/** Two human founders race the same map to the same Beacon, alternating turns. No AI, no direct PvP combat yet (see ROADMAP.md). */
+/** Two human founders race the same map to the same Beacon, alternating turns. Challenges between them resolve using each side's "standing posture" (see types.ts) since the defender isn't online to react live. */
 export function createMultiplayerGame(seed: string, guildA: GuildId, guildB: GuildId, mapRadius = 6): GameState {
   const { tiles, playerStart, rivalStart, guardian, playerSettlement, rivalSettlement } = buildBoard(seed, mapRadius);
   playerSettlement.name = 'Player 1 Landing';
@@ -143,6 +144,7 @@ export function createMultiplayerGame(seed: string, guildA: GuildId, guildB: Gui
       },
     ],
     pendingChallenge: null,
+    standingPosture: { player: 'endure', rival: 'endure' },
     beaconActivated: false,
     lastRivalIntent: null,
     ending: null,

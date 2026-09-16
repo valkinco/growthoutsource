@@ -11,6 +11,7 @@ import {
   resolveGuardianChallenge,
   resolveRivalChallenge,
   openGuardianChallenge,
+  setStandingPosture,
   endTurn,
 } from './game/actions';
 import { saveGame, loadGame, clearSave } from './game/save';
@@ -221,6 +222,11 @@ export default function App() {
     if (outcome.state !== state) playSfx('tech');
   }
 
+  function handleSetPosture(move: ChallengeMove) {
+    if (!state) return;
+    applyOutcome(setStandingPosture(state, move));
+  }
+
   function handleChallengeGuardian() {
     if (!state) return;
     applyOutcome(openGuardianChallenge(state));
@@ -302,6 +308,7 @@ export default function App() {
         onOpenTech={() => setTechOpen(true)}
         onEndTurn={handleEndTurn}
         onChallengeGuardian={handleChallengeGuardian}
+        onSetPosture={handleSetPosture}
       />
 
       {state.pendingChallenge && isMyTurn && (
